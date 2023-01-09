@@ -1,0 +1,576 @@
+---
+title: "Homophily and Delinquency in Friendship Networks of Adolescents: association between similarity and tie formation in a network"
+author: "Samantha Daoud"
+date: "4/10/2021"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, include=FALSE}
+#libraries
+library(RSiena)
+library(sna)
+library(network)
+library(networkdata)
+library(igraph)
+library(Matrix)
+```
+
+
+```{r, include=FALSE}
+setwd("/Users/samo/Documents/CSS program/Social Network ANalysis/FinalProject/datatsets/Dutch school class/klas12b")
+```
+
+```{r, include=FALSE}
+# 1)
+# four time points at intervals of three months.
+friendship.net1 <- as.matrix(read.table("klas12b-net-1.dat"))
+friendship.net2 <- as.matrix(read.table("klas12b-net-2.dat"))
+friendship.net3 <- as.matrix(read.table("klas12b-net-3.dat"))
+friendship.net4 <- as.matrix(read.table("klas12b-net-4.dat"))
+
+delinquency <- as.matrix(read.table("klas12b-delinquency.dat"))
+actor.attributes <- as.matrix(read.table("klas12b-demographics.dat"))
+advice <- as.matrix(read.table("klas12b-advice.dat"))
+primary <- as.matrix(read.table("klas12b-primary.dat"))
+composition <- as.matrix(read.table("klas12b-present.dat"))
+
+# identify "missing" values
+friendship.net1[friendship.net1==9] <- NA
+friendship.net2[friendship.net2==9] <- NA
+friendship.net3[friendship.net3==9] <- NA
+friendship.net4[friendship.net4==9] <- NA
+primary[primary==9] <- NA
+actor.attributes[actor.attributes==0] <- NA
+advice[advice==0] <- NA
+delinquency[delinquency==0] <- NA
+
+# change structural zeros to normal zeros:
+friendship.net1[friendship.net1==10] <- 0
+friendship.net2[friendship.net2==10] <- 0
+friendship.net3[friendship.net3==10] <- 0
+friendship.net4[friendship.net4==10] <- 0
+# find out number of actors:
+(numberActors <- dim(actor.attributes)[1]) # 26
+
+# Prepare data in "RSiena" format:
+##Sienadependent function
+### Dependent Network
+friendship <- sienaDependent(array(
+        c(friendship.net1, friendship.net2, friendship.net3, friendship.net4),
+  dim=c(numberActors, numberActors, 4)))
+### Dependent Actor attribute :
+delinquency <- sienaNet(delinquency, type="behavior")
+### Constant Actor attribute:
+sex <- coCovar(actor.attributes[, 1]) 
+age <- coCovar(actor.attributes[, 2]) 
+ethnicity <- coCovar(actor.attributes[, 3]) 
+religion <- coCovar(actor.attributes[, 4])
+### school advice
+advice <- coCovar(advice[, 1])
+### Dyadic variable:
+primary <- coDyadCovar(primary)
+## Composition change:
+composition <- sienaCompositionChangeFromFile("klas12b-present.dat",nodeSet = "Actors", fileobj=NULL, option = 1)
+```
+
+```{r, include=FALSE}
+# 2)
+##to check if nodes are stable, we use hamming distance function which shows the ministeps between each network:
+# hamming distance function
+Hamming <- function(changetable) {
+    return(changetable[2,1] + changetable[1,2])
+}
+net1_2.ministeps <- Hamming(table(friendship.net1,friendship.net2)) # 86 mini steps
+net2_3.ministeps <- Hamming(table(friendship.net2,friendship.net3)) # 98 mini steps
+net3_4.ministeps <- Hamming(table(friendship.net3,friendship.net4)) # 98 mini steps
+## sample size of 282, number of discrete choices that actor are taking
+
+## Jaccard index should be above >0.3 to consider network as safe:
+Jaccard <- function(changetable) {
+    return(changetable[2,2]/(changetable[1,2] + changetable[2,1] + changetable[2,2]))
+}
+
+Jaccard(table(friendship.net1,friendship.net2)) # 0.41, safe above 0.3
+Jaccard(table(friendship.net2,friendship.net3)) # 0.42, safe above 0.3
+Jaccard(table(friendship.net3,friendship.net4)) # 0.43, safe above 0.3
+## above 0.3 , in the safe side, we will proceed with networks to analyze in Rsiena network.
+```
+
+
+# Introduction  
+  
+Social network analysis is important to examine the process of the social structure. In general, social networks are dynamic and recent researches have focused on these dynamics as they are important in friendship networks (Burk, Steglich, and Snijders, 2007) and using the stochastic actor oriented model will help to represent these dynamics driven by many tendencies (micro mechanisms). Friendship relationships are established based on forming ties between social actors who are in in this paper: students. These ties may develop or disappear representing the relational changes between actors within a network. In the case of friendship, these ties are expected to be the dyadic basics of the friendship relations between two actors. The influence of ties existence sometimes are related to determinants of similarity between individuals like having the same gender or ethnicity, sharing the same educational background or behaviour. Thus, the research question here is to what degree the ties formation in friendship  networks is affected by the determinants of similarity?. This will help us to understand the different dynamics of friendship networks and show the different mechanisms of these networks.  
+
+In this paper, I also will examine the effect of delinquency behaviour on the tie formation in the friendship network of adolescents and also will examine demographic characteristics of the respondents like sex and ethnicity on friendship networks and on delinquency behaviour. Moreover, we will have better understanding to the similarity effect of demographic characteristics and behaviour by analysing data of four waves from a dutch school using Stochastic Actor-Oriented Models (SAOMs). Reasons behind hoosing a dutch secondary school as a population for my study are: the peer influence on the behaviour ( Giordano, 2003) and the time that students are spending in class has a role in forming their identity and the define degree of socialising with others (Knecht, Snijders, Baerveldt, Steglich, & Raub, 2010).  
+
+
+
+# Theoretical background  
+  
+Earlier researches show the different mechanisms that prompt to develop the structure of social networks and evolve the ties formation. In friendship networks, reciprocity, transitivity and homophily are some of the main characteristics (Girvan, Newman, 2001; Knecht, A., 2008; Koskinen, Snijders, 2007) . And in our data sample, and based on the demographic characteristics, it is assumed that the networks are reciprocated i.e the recipient of tie is more likely to resend the tie to the same individual, transitive i.e the friend of a friend is more likely to be your friend and highly segregated on the level of sex/gender (gender homophily).  
+
+
+### _Homophily_  
+  
+Homophily can be introduced as the the tendency or preference to have friends or form ties with others who have the same demographic characteristics or behaviours (McPherson et al., 2001; Kandel, 1978). It may be introduced as a key factor in tie formation and shaping friendship relationships.  One simple kind of this homophily is the gender homophily where two adolescents of the same sex are more likely to be friends Moreover, homophily can be existed in many other attributes and friendship relationships. If two adolescents are are from the same school or educational background they are more likely to be friends. These different types of homophily may have an effect on the friends’ behaviours, they are more likely to have the same risky behaviour  if they are homophilous in one attribute or characteristic (Kandel, 1978). Peer influence and friend selection are two mechanisms that help us to have a better understanding on how homophily on delinquency behaviour can be observed within friendship relations of adolescents (Kandel, 1978).It is assumed that friendship networks are not formed randomly but based on selectivity. It is more possible that among friends who share the same demographic characteristics to be also similar in the behaviour (behavioural homophily).   
+
+
+### _Behaviour_  
+  
+Risky behaviour of adolescents has been the subject of research for many studies and this holds to many kinds like drugs usage (Kandel, 1996), alcohol (Sieving, Perry, & Williams, 2000), smoking (Ennett & Bauman, 1994) and delinquency (Baerveldt, Völker & Van Rossem, 2008, Haynie & Osgood, 2005). The friendship ties in the social networks affect and is being effected by such behaviours (Haas et al., 2010). Studies found that in general, adolescents are more likely to participate in a risky behaviour because their friends do. They may select friends who share the same risky behaviour or they may have a peer influence to act like them (Knecht, Snijders, Baerveldt, Steglich, & Raub, 2010). Researches assume that status characteristics may have an effect on the behaviours of adolescents as characteristics like sex or ethnicity play key role on the culture and habits of individuals. So students with similar demographic/ status characteristics are more likely to share the same interests and behaviours (Kao & Joyner, 2004).  
+
+In this paper, I focus on these two demographic or status characteristics: gender/ sex and ethnicity because these two have the most effect on the habits and behaviour of adolescents.  
+
+# Hypotheses  
+  
+Based on literature, I draw the following hypotheses:  
+
+  _H1. Friendship networks have low density as networks formation is not random so the out degree is expected to be negative. Also Friendship networks have high reciprocity and transitivity. Which means that it has more incoming and outgoing ties between actors._  
+
+  _H2. Students who share the same school background are more likely to reciprocate friendship than with others (school place homophily).However, this will create a segregated networks in term of school background._  
+
+  _H3. Students who are similar in the status or demographic characteristics like sex or ethnicity are more likely to reciprocate friendship ties between each other. However, this will create a segregated networks in term of sex or ethnicity._  
+
+  _H4. Students who are delinquent ask less for friendship (less outgoing friendship ties) but expected be asked more for friendship (attract more incoming friendship ties). While who have behavioural similarity are more likely to ask each other for friendship._  
+
+  _H5. There is a significant effect for the status characteristics like sex and ethnicity on delinquency behaviour._  
+  
+  
+  
+  
+# Data and methods  
+  
+### _Data description_  
+
+  
+  For this analysis, I used dataset from RSiena website and were collected between 2003 and 2004 as part of study in Knecht (2008). The data includes four waves of panel data for  26 students of which 17 girls and 9 boys in class followed over their first year at a secondary school to assess the friendship networks at four time points at intervals of three months. Students aged 11-13 at the beginning of school.The assessment of the friendship networks data were done by asking students nominate up to 12 classmates who consider them as good friends. Jaccard index that measured the change amount between each two consecutive waves shows values by .4 which indicates as safe and represent a status of stability. Hamming distance index shows the minimum number of mini steps between each two networks and indicates a sufficient number of observed changes.   
+
+
+### _Measures_  
+  
+This dataset contains many variables that based on the students’ responses to survey questions and ranging on scales . For instance, network variable “friendship” was coded 0 = “no” friendship relation and 1 = “yes”, there is a friendship relation, 9 = missing and 10 = not a member of the classroom (structural zero). Change actor variable “delinquency”, rounded average of four types of delinquent activity (stealing, vandalizing, fighting, graffiti) measured in each of the four waves and coded as (1 = never, 2 = once, 3 = 2-4 times, 4 = 5-10 times, 5 = more than 10 times, 0 = missing). Constant actor variables: like sex coded as (1 = girl, 2 = boy), Ethnicity coded as (1 = Dutch, 2 = other, 0 = missing) and other variables like age and religion. “School advice” variable which indicates the school capacities of the student , coded as (4 = low, 8 = high, 0 = missing). Changing dyadic variable “primary” which indicating having gone to the same primary school, coded as (0 = no, 1 = yes).   
+  
+
+The following figures show the graphs of the four networks, each network consists of one component, all networks are directed.  
+  
+    
+    
+
+
+
+
+
+```{r, echo=FALSE}
+# 4)
+# Visualize the networks:  
+# plotting:
+graph.1 <- graph.adjacency(friendship.net1)
+graph.2 <- graph.adjacency(friendship.net2)
+graph.3 <- graph.adjacency(friendship.net3)
+graph.4 <- graph.adjacency(friendship.net4)
+
+layout1 <- layout_with_fr(graph.1)
+layout2 <- layout_with_fr(graph.2)
+layout3 <- layout_with_fr(graph.3)
+layout4 <- layout_with_fr(graph.4)
+
+par(mfrow = c(2, 2), mar= c(0,0,0,0))
+
+plot(graph.1,
+     edge.color = "black",
+     edge.width = 0.8,
+     edge.arrow.size = 0.2,
+     node.size = 25,
+     vertex.size = 4,
+     vertex.label = "",
+     layout = layout1,
+     main = "Network- 1")
+
+plot(graph.2,
+     edge.color = "grey",
+     edge.width = 0.8,
+     edge.arrow.size = 0.2,
+     node.size = 25,
+     vertex.size = 4,
+     vertex.label = "",
+     layout = layout2,
+     main = "Network- 2")
+
+plot(graph.3,
+     edge.color = "blue",
+     edge.width = 0.8,
+     edge.arrow.size = 0.2,
+node.size = 25,
+     vertex.size = 4,
+vertex.label = "",
+     layout = layout3,
+     main = "Network- 3")
+
+plot(graph.4,
+     edge.color = " green",
+     edge.width = 0.8,
+     edge.arrow.size = 0.2,
+node.size = 25,
+     vertex.size = 4,
+vertex.label = "",
+     layout = layout4,
+     main = "Network- 4")
+```
+  
+    
+    
+
+
+
+```{r, include=FALSE}
+# 5)
+# prepare descriptive statistics for networks:
+## in-outdegrees, means and standard deviation
+indeg1 <- sna::degree(friendship.net1,"indegree")
+outdeg1 <- sna::degree(friendship.net1,"outdegree")
+indeg2 <- sna::degree(friendship.net2,"indegree")
+outdeg2 <- sna::degree(friendship.net2,"outdegree")
+indeg3 <- sna::degree(friendship.net3,"indegree")
+outdeg3 <- sna::degree(friendship.net3,"outdegree")
+indeg4 <- sna::degree(friendship.net4,"indegree")
+outdeg4 <- sna::degree(friendship.net4,"outdegree")
+net1.mean <- mean(indeg1)
+net2.mean <- mean(indeg2)
+net3.mean <- mean(indeg3)
+net4.mean <- mean(indeg4)
+
+# changes calculated using Hamming function:
+net1_2.ministeps #86
+net2_3.ministeps #98
+net3_4.ministeps #98
+
+# descriptive statistics for key variables:
+#delinquency
+delinq_mean <- mean(delinquency, na.rm = TRUE) # 1.742268
+#sex
+gender <- mean(sex , na.rm = TRUE) # 1.346154
+#ethnicity
+ethni_mean <- mean(ethnicity, na.rm = TRUE) # 1.08
+#advice
+advice_mean <- mean(advice, na.rm = TRUE) # 5.9
+```
+  
+  
+  
+  
+The below tables show the  descriptive statistics of the four networks and the key variables.  
+
+In table 1, we can see that the parameters show that the mean of network 3 (10.23) is higher than other networks, while the means of network 2 and 4 are nearly the same (9.00, 9.15) while it is the least in network 1 (7.00).   
+  
+  
+```{r, echo=FALSE}
+# prepare table for descriptive statistics
+library(kableExtra)
+# means of networks
+networks <- matrix(c(net1.mean, net2.mean,net3.mean,net4.mean),
+                   ncol=4,byrow=TRUE)
+colnames(networks) <- c("Network 1","Network 2","Network 3","Network 4")
+rownames(networks) <- c("Means")
+## create table
+kbl(digits = 2, networks,booktabs=T, align = "c", linesep="", position="h",valign = 't', caption = "Descriptive statistics of longitudinal networks means") %>% 
+  kable_styling(font_size=12)
+```
+  
+  
+In table 2, we notice the changes’ values indicate the ministeps between each two consecutive waves, we notice that for 1st period, changes are 86 while for the 2nd and 3rd periods are 98. Total of changes for the 3 periods are 282 which represent the no. of discrete choices that actors are taking.  
+  
+  
+```{r, echo=FALSE}
+# prepare table for changes between waves
+waves_changes <- matrix(c(net1_2.ministeps, net2_3.ministeps, net3_4.ministeps),ncol=3,byrow=TRUE)
+colnames(waves_changes) <- c("Network 1-2","Network 2-3","Network 3-4")
+rownames(waves_changes) <- c("Changes (ministeps)")
+## create table
+kbl(digits = 2, waves_changes,booktabs=T, align = "c", linesep="", position="h",valign = 't', caption = " Descriptive statistics of changes between 3 waves") %>% 
+  kable_styling(font_size=12)
+```
+  
+  
+In table 3, we see that the means of advice is the highest (5.92), following delinquency mean is (1.74) while the means of constant variables ethnicity and gender are nearly the same (1.08, 1.35). Thus, based on these statistics, Hamming and Jaccard testing, networks data are suitable to be analysed using stochastic actor-oriented model.   
+  
+  
+```{r, echo=FALSE}
+# prepare tables for key variables means:
+key_variables <- matrix(c(delinq_mean, ethni_mean,advice_mean,gender),
+                   ncol=4,byrow=TRUE)
+colnames(key_variables) <- c("delinquency","ethnicity","advice","gender")
+rownames(key_variables) <- c("Means")
+## create table
+kbl(digits = 2, key_variables,booktabs=T, align = "c", linesep="", position="h",valign = 't', caption = " Descriptive statistics of key variables means") %>% 
+  kable_styling(font_size=12)
+```
+
+  
+  
+  
+  
+
+  
+### _Data recoding_  
+  
+The data contains missing values due to the absence of students and were treated using the ad-hoc model using imputation, (Huisman and Steglich, 2008) to avoid unbiased parameter estimates and get accurate standard error estimates. Students who left the classroom cause changes in the network composition and was treated by using the “structural zeros” i.e, all  in-out tie variables of the left students were treated as zeros. Recoding the missing and structural zeros in all measures would improve the convergency of our models.  
+
+
+### _Stochastic Actor-Oriented Model_  
+  
+In order to test my research question and hypotheses, I used stochastic Actor-Oriented model (SAOM) estimated by RSiena software . I created data object for SAOM by joining all waves of the friendship network in addition to other variables. The data we got includes two dependent variables : (friendship and delinquency) where the type of friendship is one mode which indicates social ties, i.e people are connected to people, with four observations and with densities that goes up until the third network then we notice a slight decrease (0.14, 0.19, 0.22, 0.18). While the type of delinquency as behaviour with 4 observations and the race of actors are from 1 to 5. Constant covariates are: “sex” and “ethnicity”. Dyadic covariate is “primary”.  
+
+Then I specified a co-evolution empty model for the data by applying “get effects” function and fitted a simple model including only the the effects of transitivity and the interaction of reciprocity with  transitivity and another model includes only the degrees related-effects for the friendship dynamics. Then I added interactions with gender, primary (same school) and the behaviour variable delinquency to test the homophily, sender and receiver effect of delinquency on friendship. Also added effects to the behavior objective function with interactions with gender and ethnicity.   
+
+To assess the model convergence on the network dimensions, we can calculate the degree to which the model-simulated data are entered around the observed data. In our data, the convergence t-ratio for all parameters is very close to zero i.e below 0.1 and above -0.1, which means that the convergence has been achieved and it is a converged model so we can interpret the estimates. Also we see the overall maximum convergence ratio is 0.15 which is below .20 so it is considered as a good value.   
+
+
+
+```{r, include=FALSE, message=FALSE}
+# Join them all into Data object for SAOM:
+thedata <- sienaDataCreate(friendship,delinquency,sex,ethnicity,primary,composition)
+thedata
+# Type  oneMode, social ties.. people are connected to people
+# We can generate an initial descriptive output file:
+print01Report(thedata,modelname = 'data-descriptive')
+
+```
+
+```{r, include=FALSE}
+# Specify co-evolution model with "geteffects" function applied to data
+
+themodel <- getEffects(thedata) # not including any interesting effects yet
+effectsDocumentation(themodel)
+
+# add effects to network objective function:
+themodel <- includeEffects(themodel, transTrip, transRecTrip) # (effects of transitivity and the interaction of reciprocity with  transitivity )#clustering
+themodel <- includeEffects(themodel, inPop,outAct,inAct) # degrees related effects (inPop # whether popular people attract another ties (receive ties), outact# how many ties are sent, inAct# twopath effect)
+themodel <- includeEffects(themodel, X, interaction1="primary", name = "friendship")# dyad effect (school place homophily)
+
+themodel <- includeEffects(themodel,sameX, interaction1="sex", name = "friendship") # gender homophily
+
+themodel <- includeEffects(themodel,altX,egoX,simX,interaction1="delinquency", name = "friendship") # behavior effect
+
+# add effects to behaviour objective function
+themodel <- includeEffects(themodel,name='delinquency', effFrom,interaction1='sex') # effect of gender on delinquency
+
+themodel <- includeEffects(themodel,name='delinquency',effFrom,interaction1='ethnicity') # effect of gender on delinquency
+
+# inspect model specification
+themodel
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+#estimation algorithm:
+controls  <- sienaAlgorithmCreate()
+## function to estimate the model "siena07
+(first.results <- siena07(controls,
+	data = thedata,
+	effects = themodel,
+	batch = FALSE,verbose = FALSE,
+	returnDeps = TRUE))
+
+# convergence statistics for all parameters are all below 0.1 and above -0.1 so there is convregence.
+
+```
+  
+  
+  
+### _Goodness of Fit_  
+  
+  I assess the goodness of fit by checking the characteristics that are not explicitly including in the model specification. So first I calculate the fit with respect to the indegree distribution using SienaGOF. As we see in the below graph, the red dots are the observed values, while the grey dots are the simulated data. We find a significant misfit and see a departure of the observed data outside the simulated data at point (17) in category 2 and point (2) in category 3. So it is a significant departure with p-value (0.03).  
+
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Goodness of fit for the indegree distribution: 
+gof1.indegrees <- sienaGOF(first.results,IndegreeDistribution,
+                           varName = "friendship",cumulative = FALSE)
+plot(gof1.indegrees) 
+# bad fit!
+```
+  
+  
+  
+  
+  
+  In order to obtain a better fit, I try to add more subgraphs, so now I include the out degree distribution to the model as shown in below graph. It looks better than the last graph, we find an insignificant fit where the observed data represented by the red line fits well in the simulated data but still there is a small departure at point (1) in category 7 and point 8 in category 8 with p- value (0.1).  
+
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+#Goodness of fit for the out degree distribution: 
+gof1.outdegrees <- sienaGOF(first.results,OutdegreeDistribution,
+	                            varName = "friendship",cumulative = FALSE)
+```
+```{r, echo=FALSE, message=FALSE}
+plot(gof1.outdegrees) 
+## better fit
+```
+
+  
+  
+  
+  
+Now I add more subgraphs like “TriadCensus” as shown in the below graph. We obtain an insignificant better fit as the red lines lies in the middle of the simulated data with no departure and with p-value (0.99).  
+
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+# Assessing model fit by adding triadCensus
+gof1.triads <- sienaGOF(first.results,TriadCensus,varName = "friendship")
+```
+```{r, echo=FALSE, message=FALSE}
+plot(gof1.triads,center = TRUE,scale = TRUE)
+## we find a good fit as the red line lies in the middle of the simulated data
+```
+
+  
+  
+  
+  
+  
+  
+Calculating the goodness of fit for the overall behaviour distribution “delinquency” as shown in below graph, it looks good and we obtain a better fit but insignificant as the p-value is (0.96).  
+
+
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+# goodness of fit overall behaviour distribution
+( gof.behaviour <- sienaGOF(first.results,BehaviorDistribution,
+	verbose=TRUE,join=TRUE,varName="delinquency"))
+```
+```{r, echo=FALSE, message=FALSE}
+# plot Goodness of Fit of BehaviorDistribution:
+plot(gof.behaviour,center = TRUE,scale = TRUE)
+```
+    
+    
+    
+    
+# Results  
+  
+Table 4 presents the results. We report the parameters’ estimate, their standard errors and the p values. We notice that most of the coefficients are statistically significant. The first part of the table is about the network dynamics where we find the rate parameters which show the amount of friendship changes during the periods. We notice these changes slightly peak in period 2 (7.7) , they decrease (7.2) in period 3. All changes are significant at the level of (p < .001).   
+
+The outdegree (density) parameter is negative and significant (-1.6) which means that there is general tendency not to have ties to many others at a random. They avoid contact in general and prefer few new ties. Reciprocity parameter is positive (1.8) which means they prefer ties that are reciprocated and embedded in transitive triplets (0.5). While the interaction of reciprocity with transitivity is negative (-0.4). These parameters are significant at the level of (p < .001). This support hypothesis _(H1)_.  
+
+The parameter estimates of variables like primary- same school (0.9)  and same sex (0.6) show that there is main effect of homophily on the level of same school and same sex, which means students who are from the same school or the same sex are more likely to be friends. The homophily index of same school and same sex is significant at the level of (p < .001). This support hypotheses _(H2 & H3)_.  
+
+The parameter estimate of delinquency alter, has positive effect (0.3), which means that students with bad behaviour i.e who are delinquent will be asked to be friends. While the parameter estimate of delinquency ego has negative effect (-0.09) which means that students who are delinquent will not ask other to be friends. Delinquency similarity has positive and high effect (3.1) which means that students who are similar with delinquency behaviour will ask each other to be friends. but these effects of the behaviour delinquency are not significant. This rejects hypothesis _(H4)_.  
+
+The second part is about the behaviour dynamics: where we find the rate parameters estimates of the changes of the delinquency variable during the three periods. We notice the changes increase gradually starting from the 1st period (1.2) to 3rd period (2.3). The estimates of period 1 and period 2 are significant at the level of (p < .05) while period 2 is not significant.  
+
+We find positive effect for sex and ethnicity on delinquency but these effect are not significant. This rejects hypothesis _(H5)_.  
+
+
+
+
+
+  
+  
+  
+   
+
+
+```{r, include=FALSE}
+# final results
+# table with approximate $p$-values:
+parameter <- first.results$effects$effectName
+estimate <- first.results$theta
+st.error <- sqrt(diag(first.results$covtheta))
+normal.variate <- estimate/st.error
+p.value.2sided <- 2*pnorm(abs(normal.variate),lower.tail = FALSE)
+(results.table <- data.frame(parameter,
+	                  estimate = round(estimate,3),
+	                  st.error = round(st.error,3),
+	                  normal.variate = round(normal.variate,2),
+	                  p.value = round(p.value.2sided,4)))
+
+```
+
+```{r, echo=FALSE}
+# creating table for the final results with p values
+kbl(digits = 4, results.table,booktabs=T, align = "c", linesep="", position="h",valign = 't', caption = " Descriptive statistics of the parameters and p-values") %>% 
+  kable_styling(font_size=12)
+
+```
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+# Conclusions and discussion  
+
+In this paper, I discussed the question of research on to what degree tie formation is affected by determinants of similarity and posed hypotheses and investigated them through SAOM models. I also  examined the network dynamics on the micro level. The descriptive results and models show that friendship networks of adolescents in the dutch school are not randomly formed. It is based on gender preferences, selection preferences on the level of behaviour. Similarity in the level of sex and ethnicity affect significantly on tie formation within friendship networks. While there is insignificant effect for the similarity of behavior on the tie formation. Nonetheless, this study was only for time interval of three months; so for future research we can investigate similarity on a longer time periods and different behaviours.  
+  
+  
+  
+  
+
+### References   
+  
+   
+Baerveldt, C., Völker, B., & Van Rossem, R. (2008). Revisiting selection and influence: An inquiry into the friendship networks of high school students and their association with delinquency. Revue Canadienne de Criminologie et de Justice Pénale, Octobre, 559-587.   
+
+Brass, D.J., Galaskiewicz, J., Greve, H.R., Tsai, W., 2004. Taking stock of networks and organizations: a multilevel perspective. Academy of Management Journal 47, 795–817.
+Burk, W.J., Steglich, C.E.G., Snijders, T.A.B., 2007. Beyond dyadic interdependence: Actor-oriented models for co-evolving social networks and individual behaviors. International Journal of Behavioral Development 31, 397–404.  
+
+Ennett, S. T., & Bauman, K. E. (1994). The contribution of influence and selection to adolescent peer group homogeneity: The case of adolescent cigarette smoking. Journal of Personality and Social Psychology, 67, 653-666.   
+
+Haynie, D. L., & Osgood, W. D. (2005). Reconsidering peers and delinquency: How do peers matter? Social Forces, 84(2), 1109-1130.   
+
+Haas, S.A., Schaefer, D.R., Kornienko, O., 2010. Health and the structure of  adolescent social networks. J. Health Soc. Behav. 51, 424–439.
+  
+
+Jin, E.M., Girvan, M., Newman, M.E.J., 2001. Structure of growing social networks. Physical review E, 64, 046132.  
+
+Kandel, D. B. (1996). The parental and peer contexts of adolescent deviance: An algebra of interpersonal influences. Journal of Drug Issues, 26(2), 289-315.  
+
+Kandel, D.B., 1978. Homophily, selection, and socialization in adolescent friendships. Am. J. Sociol. 84, 427–436.  
+
+Kao, G., & Joyner, K. (2004). Do race and ethnicity matter among friends? Activities among interracial, interethnic, and intraethnic adolescent friends. Sociological Quarterly, 45(3), 557- 573.  
+
+Knecht, A., 2008. Friendship Selection and Friends’ Influence. Dynamics of Networks and Actor Attributes in Early Adolescence. PhD dissertation, University of Utrecht.  
+
+Knecht A, Snijders TAB, Baerveldt C, Steglich CEG, Raub W. Friendship and delinquency: Selection and influence processes in early adolescence. Social Development. 2010; 19:494–514.  
+
+Koskinen, J.H., Snijders, T.A.B., 2007. Bayesian inference for dynamic network data. Journal of Statistical Planning and Inference 13, 3930–3938.  
+
+M. Huisman, C. Steglich, 2008. Treatment of non-response in longitudinal network studies. Social Networks 30 (2008) 297–308.  
+
+McPherson, M., Smith-Lovin, L., Cook, J.M., 2001. Birds of a feather: homophily in social networks. Annu. Rev. Sociol. 27, 415–444.  
+
+Skyrms, B., Pemantle, R., 2000. A dynamic model of social network formation. PNAS 97, 9340–9346.  
+
+Sieving, R. E., Perry, C. L., & Williams, C. L. (2000). Do friendships change behaviors, or do behaviors change friendships? Examining paths of influence in young adolescents' alcohol use. Journal of Adolescent Health, 26(1), 27-35.   
+
+Snijders, T.A.B., 2001. The statistical evaluation of social network dynamics. Sociol.Methodol. 31, 361–395.  
+
+Snijders, T.A.B., 1996. Stochastic actor-oriented dynamic network analysis. Journal of Mathematical Sociology 21, 149–172.  
+
+Snijders, T.A.B., 2001. The statistical evaluation of social network dynamics. In: Sobel, M., Becker, M. (Eds.), Sociological Methodology, Basil Blackwell, Boston and London, pp. 361–395.  
+
+Snijders, T.A.B., Steglich, C.E.G., and van de Bunt, G.G. (2010), Introduction to actor-based models for network dynamics, Social Networks 32, 44-60.  
+
+
+```{r, include=FALSE}
+# save data
+save(friendship.net1, friendship.net2, friendship.net3, friendship.net4, delinquency, actor.attributes, advice, primary, composition, file='klas12data.RData')
+
+save.image("network_dynamics_lab_results.RData")
+
+```
+
